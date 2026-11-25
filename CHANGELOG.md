@@ -14,3 +14,5 @@ All notable changes to this project are documented here. The format follows [Kee
 - Tray icon, start with Windows, global shortcut <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>G</kbd>.
 - Claude Code install and update checks.
 - English and Italian interface.
+- In-app updates: the app checks GitHub releases at startup and installs new versions with one click.
+- Per-user installer (no admin rights needed).

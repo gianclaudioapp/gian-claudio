@@ -14,7 +14,8 @@ import { Account, AppState, Chat, Context, HistoryEntry, newId, timeAgo, accVars
 import { ReadOnlyChat } from "./ReadOnlyChat";
 import { SettingsPage } from "./SettingsPage";
 import { LaunchSpec, Terminal } from "./Terminal";
-import { Confirm, ContextMenu, Menu } from "./ui";
+import { Confirm, ContextMenu, Dialog, Menu } from "./ui";
+import { AppUpdateState, appVersion, checkAppUpdate, installAppUpdate } from "./updates";
 import { lang, resolveLang, setLang, t, tn } from "./i18n";
 
 /*
@@ -46,6 +47,10 @@ export default function App() {
   /** Latest published Claude Code: undefined = not checked yet, null = unknown (offline). */
   const [claudeLatest, setClaudeLatest] = useState<string | null | undefined>(undefined);
   const [updateAsk, setUpdateAsk] = useState<{ installed: string; latest: string } | null>(null);
+  /** Gian Claudio's own version and update (separate from Claude Code's). */
+  const [appVer, setAppVer] = useState<string | null>(null);
+  const [appUpdate, setAppUpdate] = useState<AppUpdateState>({ status: "idle" });
+  const [appUpdateAsk, setAppUpdateAsk] = useState(false);
   const [runs, setRuns] = useState<Record<string, LaunchSpec>>({});
   const [aux, setAux] = useState<Record<string, AuxTab>>({});
   const [readEntries, setReadEntries] = useState<Record<string, HistoryEntry>>({});
@@ -75,6 +80,9 @@ export default function App() {
       setPaths(p);
       setState(s);
       checkClaude(true);
+      appVersion().then(setAppVer);
+      // Development builds are not installed: no update prompt there.
+      if (!import.meta.env.DEV) checkApp(true);
       const counts = await Promise.all(s.contexts.map(async (c) => [c.id, (await api.historyList(c.dirName)).length] as const));
       setHistoryCounts(Object.fromEntries(counts));
     })();
@@ -106,6 +114,26 @@ export default function App() {
     setClaudeVersion(installed);
     setClaudeLatest(latest);
     if (ask && installed && latest && isNewerVersion(installed, latest)) setUpdateAsk({ installed, latest });
+  }
+
+  /** Look for a new Gian Claudio release; at startup, offer it when there is one. */
+  async function checkApp(ask: boolean) {
+    setAppUpdate({ status: "checking" });
+    const r = await checkAppUpdate();
+    setAppUpdate(r);
+    if (ask && r.status === "available") setAppUpdateAsk(true);
+  }
+
+  /** Download, install and restart. Chats resume when the app starts again. */
+  async function installApp() {
+    if (appUpdate.status !== "available") return;
+    const update = appUpdate.update;
+    setAppUpdate({ status: "installing", update, percent: null });
+    try {
+      await installAppUpdate(update, (percent) => setAppUpdate({ status: "installing", update, percent }));
+    } catch {
+      setAppUpdate({ status: "failed" });
+    }
   }
 
   // ---- helpers ----------------------------------------------------------------
@@ -677,7 +705,8 @@ export default function App() {
             <SettingsPage settings={state.settings} dataDir={paths.dataDir} claudeVersion={claudeVersion} claudeLatest={claudeLatest}
               onChange={(settings) => update((s) => ({ ...s, settings }))}
               onRecheck={() => checkClaude(false)}
-              onInstall={installClaude} onUpdate={updateClaude} />
+              onInstall={installClaude} onUpdate={updateClaude}
+              appVersion={appVer} appUpdate={appUpdate} onCheckAppUpdate={() => checkApp(false)} onInstallAppUpdate={installApp} />
           )}
 
           {activeCtx && (
@@ -738,7 +767,26 @@ export default function App() {
           { label: t("Delete context"), icon: "trash", danger: true, onClick: () => setDeleting(ctxMenu.ctx) },
         ]} />
       )}
-      {updateAsk && (
+      {appUpdateAsk && (appUpdate.status === "available" || appUpdate.status === "installing") && (
+        <Dialog title={t("Update Gian Claudio?")} width={480} onClose={() => appUpdate.status !== "installing" && setAppUpdateAsk(false)}>
+          <div className="dbody">
+            <p>{tn("Gian Claudio {latest} is available (you have {current}). The app restarts to install it; open chats resume afterwards.", {
+              latest: <b>{appUpdate.update.version}</b>, current: appUpdate.update.currentVersion,
+            })}</p>
+            {appUpdate.update.body && <div className="update-notes">{appUpdate.update.body}</div>}
+          </div>
+          <div className="dfoot">
+            {appUpdate.status === "installing" && (
+              <span className="info">{appUpdate.percent === null ? t("Downloading the update…") : t("Downloading the update… {n}%", { n: Math.round(appUpdate.percent) })}</span>
+            )}
+            <div className="right">
+              <button className="btn ghost" disabled={appUpdate.status === "installing"} onClick={() => setAppUpdateAsk(false)}>{t("Not now")}</button>
+              <button className="btn pri" autoFocus disabled={appUpdate.status === "installing"} onClick={installApp}>{t("Update and restart")}</button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+      {updateAsk && !appUpdateAsk && (
         <Confirm title={t("Update Claude Code?")} confirmLabel={t("Update")} cancelLabel={t("Not now")}
           onClose={() => setUpdateAsk(null)} onConfirm={updateClaude}
           text={<p>{tn("Claude Code {latest} is available (you have {installed}). The update opens in a tab; chats already open switch to the new version when you restart them.", { latest: <b>{versionNumber(updateAsk.latest)}</b>, installed: versionNumber(updateAsk.installed) })}</p>} />

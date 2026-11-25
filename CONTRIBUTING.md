@@ -39,6 +39,23 @@ One Rust test starts the real `claude` CLI in a ConPTY. It is skipped when the C
 - **Follow the existing style**: small components, plain CSS with the tokens in `src/styles.css`, and Rust commands that do their blocking work off the main thread (`async` + `spawn_blocking`).
 - **Privacy.** The app must not send anything anywhere except through Claude Code itself and the version check. Don't add telemetry.
 
+## Releasing (maintainers)
+
+1. Set the new version everywhere: `npm run release:version -- 0.2.0`.
+2. Move the "Unreleased" notes in [CHANGELOG.md](CHANGELOG.md) under the new version.
+3. Commit, tag and push:
+
+   ```powershell
+   git commit -am "Release v0.2.0"
+   git tag v0.2.0
+   git push origin main v0.2.0
+   ```
+
+4. The **Release** action builds the installer, signs the update files and creates a **draft** release with `latest.json`.
+5. Check the draft on GitHub and publish it. Installed apps see the update at their next start.
+
+Update files are signed with the key in the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets. The matching public key is in `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`). If the private key is lost, installed apps can no longer verify updates: everyone has to reinstall once from a setup signed with a new key.
+
 ## License
 
 By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import type { AppUpdateState } from "./updates";
 import { Icon } from "./icons";
 import { LANGUAGES, LangSetting, t, tn } from "./i18n";
 import { ACCENTS, Settings, SummaryModel, TERMINAL_SCALE_MAX, TERMINAL_SCALE_MIN, isNewerVersion, terminalFontSize, versionNumber } from "./model";
@@ -13,9 +14,14 @@ interface Props {
   onRecheck: () => void;
   onInstall: () => void;
   onUpdate: () => void;
+  /** Version of Gian Claudio, and the state of its own update check. */
+  appVersion: string | null;
+  appUpdate: AppUpdateState;
+  onCheckAppUpdate: () => void;
+  onInstallAppUpdate: () => void;
 }
 
-export function SettingsPage({ settings, dataDir, claudeVersion, claudeLatest, onChange, onRecheck, onInstall, onUpdate }: Props) {
+export function SettingsPage({ settings, dataDir, claudeVersion, claudeLatest, onChange, onRecheck, onInstall, onUpdate, appVersion, appUpdate, onCheckAppUpdate, onInstallAppUpdate }: Props) {
   const [checking, setChecking] = useState(false);
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [autostartErr, setAutostartErr] = useState<string | null>(null);
@@ -119,6 +125,29 @@ export function SettingsPage({ settings, dataDir, claudeVersion, claudeLatest, o
               </label>
               {autostartErr && <span className="err">{autostartErr}</span>}
               <button className="btn" onClick={() => api.quit()}><Icon name="x" size={14} />{t("Quit the app")}</button>
+            </div>
+          </section>
+          <section className="set-row">
+            <div><h2>Gian Claudio</h2><p>{t("The app checks for new versions when it starts. Updating restarts it; open chats resume afterwards.")}</p></div>
+            <div className="set-ctl col">
+              <div className="set-line">
+                <span className="st ok"><span className="sdot" />{appVersion ? t("Version {version}", { version: appVersion }) : "—"}</span>
+                <button className="btn" disabled={appUpdate.status === "checking" || appUpdate.status === "installing"} onClick={onCheckAppUpdate}>
+                  <Icon name="refresh" size={14} />{t("Check for updates")}
+                </button>
+              </div>
+              {appUpdate.status === "checking" && <span className="hint">{t("Checking…")}</span>}
+              {appUpdate.status === "none" && <span className="hint">{t("This is the latest version.")}</span>}
+              {appUpdate.status === "failed" && <span className="hint">{t("Couldn't check for updates (are you offline?).")}</span>}
+              {appUpdate.status === "available" && (
+                <div className="set-line">
+                  <span className="hint">{t("Version {version} is available.", { version: appUpdate.update.version })}</span>
+                  <button className="btn pri" onClick={onInstallAppUpdate}><Icon name="download" size={14} />{t("Update and restart")}</button>
+                </div>
+              )}
+              {appUpdate.status === "installing" && (
+                <span className="hint">{appUpdate.percent === null ? t("Downloading the update…") : t("Downloading the update… {n}%", { n: Math.round(appUpdate.percent) })}</span>
+              )}
             </div>
           </section>
           <section className="set-row">

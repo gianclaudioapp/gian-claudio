@@ -1,0 +1,56 @@
+name: Release
+
+# Pushing a tag like v0.2.0 builds the Windows installer, signs the update
+# files and creates a draft GitHub release with latest.json for the in-app
+# updater. Publish the draft to make the update available.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check that the tag matches the app version
+        shell: bash
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match the app version $version. Run npm run release:version first."
+            exit 1
+          fi
+
+      - name: Build and create the draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Gian Claudio ${{ github.ref_name }}
+          releaseBody: |
+            See [CHANGELOG.md](https://github.com/gianclaudioapp/gian-claudio/blob/main/CHANGELOG.md) for what changed.
+
+            **Install:** download `Gian Claudio_*_x64-setup.exe` below and run it. The installer is not code-signed: if Windows shows "Windows protected your PC", click **More info → Run anyway**. Already installed? The app offers the update at startup.
+          releaseDraft: true
+          prerelease: false

@@ -64,4 +64,14 @@ export const itApp: Record<string, string> = {
   "Past chats": "Chat passate",
   "Open Gian Claudio": "Apri Gian Claudio",
   "Quit": "Esci",
+
+  // App updates
+  "Update Gian Claudio?": "Aggiornare Gian Claudio?",
+  "Gian Claudio {latest} is available (you have {current}). The app restarts to install it; open chats resume afterwards.":
+    "È disponibile Gian Claudio {latest} (ora hai la {current}). L'app si riavvia per installarlo; le chat aperte riprendono subito dopo.",
+  "Update and restart": "Aggiorna e riavvia",
+  "Downloading the update…": "Scarico l'aggiornamento…",
+  "Downloading the update… {n}%": "Scarico l'aggiornamento… {n}%",
+  "The app checks for new versions when it starts. Updating restarts it; open chats resume afterwards.":
+    "All'avvio l'app controlla se ci sono nuove versioni. L'aggiornamento la riavvia; le chat aperte riprendono subito dopo.",
 };

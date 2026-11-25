@@ -61,6 +61,8 @@ Build the installer (NSIS):
 npm run tauri build
 ```
 
+The build also signs the update files, so it needs the updater key in `TAURI_SIGNING_PRIVATE_KEY` (and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). Releases are built by GitHub Actions: see [CONTRIBUTING.md](CONTRIBUTING.md#releasing-maintainers).
+
 Rust tests (one of them starts the real `claude` CLI in a ConPTY):
 
 ```powershell

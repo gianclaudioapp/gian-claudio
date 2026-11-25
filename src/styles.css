@@ -441,3 +441,6 @@ kbd { font: 11.5px var(--mono); background: var(--code-bg); border: 1px solid va
 /* Settings: a row of status + buttons inside a column control */
 .set-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 [data-theme="dark"] .md a { color: var(--accent); }
+
+/* Release notes in the app update dialog */
+.update-notes { margin-top: 12px; max-height: 200px; overflow: auto; white-space: pre-wrap; font-size: 13px; color: var(--muted); background: var(--surface-2); border-radius: 8px; padding: 10px 12px; }

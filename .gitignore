@@ -39,3 +39,6 @@ src-tauri/target-test/
 
 # Brand images for the GitHub organisation profile
 branding/
+
+# Updater signing keys (private key: never commit)
+keys/
