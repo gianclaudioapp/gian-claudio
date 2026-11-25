@@ -27,30 +27,28 @@ function pctOf(v: number | null | undefined): number | null {
 }
 
 /**
- * Usage donut for the chat header: the account's 5-hour plan limit when Claude
- * Code reports it, otherwise how full the chat's context is. Hover for both;
- * a "!" appears when the context is close to full.
+ * Usage donuts for the chat header: the account's 5-hour plan limit (when
+ * Claude Code reports it) and how full the chat's context is. Hover either for
+ * the details; a "!" appears when the context is close to full.
  */
-export function UsageDonut({ limits, line, onOpenUsage }: { limits: AccountLimits | null; line: ContextLine | null; onOpenUsage: () => void }) {
+export interface ChatRef { configDir: string | null; cwd: string; sessionId: string }
+
+export function UsageDonut({ limits, line, chat, onOpenUsage }: { limits: AccountLimits | null; line: ContextLine | null; chat: ChatRef | null; onOpenUsage: () => void }) {
+  const base = useContextBase(chat, line?.ts ?? 0);
   const five = pctOf(limits?.fiveHour?.pct);
   const week = pctOf(limits?.sevenDay?.pct);
   const ctx = pctOf(line?.contextPct);
-  const value = five ?? ctx;
-  const showsLimit = five !== null;
   const critical = ctx !== null && ctx >= CONTEXT_CRITICAL;
-  const r = 9;
-  const c = 2 * Math.PI * r;
   const updated = Math.max(limits?.ts ?? 0, line?.ts ?? 0);
 
   return (
-    <div className="donut-wrap" tabIndex={0} aria-label={value === null ? t("Usage not available yet") : `${showsLimit ? t("5-hour limit") : t("Context")}: ${Math.round(value)}%`}>
-      <svg width="24" height="24" viewBox="0 0 24 24" className={`donut ${value === null ? "none" : level(value)}`} aria-hidden="true">
-        <circle cx="12" cy="12" r={r} className="track" />
-        {value !== null && (
-          <circle cx="12" cy="12" r={r} className="arc" strokeDasharray={`${(value / 100) * c} ${c}`} transform="rotate(-90 12 12)" />
-        )}
-      </svg>
-      <span className="donut-val">{value === null ? "—" : `${Math.round(value)}%`}</span>
+    <div className="donut-wrap" tabIndex={0} aria-label={[
+      five !== null ? `${t("5-hour limit")}: ${Math.round(five)}%` : "",
+      ctx !== null ? `${t("Context")}: ${Math.round(ctx)}%` : t("Usage not available yet"),
+    ].filter(Boolean).join(", ")}>
+      {five !== null && <Ring label={t("Session")} value={five} />}
+      {five !== null && <span className="donut-sep" aria-hidden="true" />}
+      <Ring label={t("Chat")} value={ctx} />
       {critical && (
         <span className="ctx-alert" title={t("Context almost full ({pct}%): consider starting a new chat", { pct: Math.round(ctx!) })}>
           <Icon name="alert" size={16} />
@@ -60,10 +58,7 @@ export function UsageDonut({ limits, line, onOpenUsage }: { limits: AccountLimit
         {five !== null && <PopRow label={t("Session (5 hours)")} pct={five} note={resetLabel(limits?.fiveHour)} />}
         {week !== null && <PopRow label={t("Week")} pct={week} note={resetLabel(limits?.sevenDay)} />}
         {ctx !== null ? (
-          <PopRow label={t("Chat context")} pct={ctx}
-            note={line?.contextSize
-              ? t("of {size} tokens", { size: fmtTokens(line.contextSize) }) + (critical ? ` · ${t("almost full")}` : "")
-              : critical ? t("almost full") : ""} />
+          <ContextRows pct={ctx} size={line?.contextSize ?? null} base={base} critical={critical} />
         ) : (
           <p className="pop-note">{t("Context fill shows up after Claude's first reply.")}</p>
         )}
@@ -74,6 +69,69 @@ export function UsageDonut({ limits, line, onOpenUsage }: { limits: AccountLimit
         </div>
       </div>
     </div>
+  );
+}
+
+/** The chat's context base (see `api.contextBase`), looked up until Claude has answered once. */
+function useContextBase(chat: ChatRef | null, lineTs: number): number | null {
+  const [base, setBase] = useState<{ sessionId: string; tokens: number } | null>(null);
+  const known = !!chat && base?.sessionId === chat.sessionId;
+  useEffect(() => {
+    if (!chat || known) return;
+    let alive = true;
+    api.contextBase(chat).then((tokens) => alive && tokens && setBase({ sessionId: chat.sessionId, tokens }));
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat?.sessionId, chat?.configDir, chat?.cwd, known, lineTs]);
+  return known ? base!.tokens : null;
+}
+
+/**
+ * Chat context fill, split into the base every request carries (system prompt,
+ * tools, memory: measured at the first request), the conversation and what's free.
+ */
+function ContextRows({ pct, size, base, critical }: { pct: number; size: number | null; base: number | null; critical: boolean }) {
+  const note = size
+    ? t("of {size} tokens", { size: fmtTokens(size) }) + (critical ? ` · ${t("almost full")}` : "")
+    : critical ? t("almost full") : "";
+  if (!size || base === null) return <PopRow label={t("Chat context")} pct={pct} note={note} />;
+  const basePct = Math.min(pct, (base / size) * 100);
+  const convPct = pct - basePct;
+  const fmt = (v: number) => `${v < 1 && v > 0 ? v.toFixed(1) : Math.round(v)}%`;
+  return (
+    <>
+      <div className="pop-row">
+        <span className="pop-label">{t("Chat context")}</span>
+        <span className="pop-meter stack">
+          <span className="base" style={{ width: `${basePct}%` }} />
+          <span className={level(pct)} style={{ width: `${convPct}%` }} />
+        </span>
+        <b>{Math.round(pct)}%</b>
+        {note && <span className="pop-sub">{note}</span>}
+      </div>
+      <ul className="pop-split">
+        <li><i className="base" />{t("Base")}<span className="pop-sub-inline">{t("instructions, tools, memory")}</span><b>{fmt(basePct)}</b></li>
+        <li><i className={level(pct)} />{t("Conversation")}<b>{fmt(convPct)}</b></li>
+        <li><i className="free" />{t("Free")}<b>{fmt(100 - pct)}</b></li>
+      </ul>
+    </>
+  );
+}
+
+function Ring({ label, value }: { label: string; value: number | null }) {
+  const r = 9;
+  const c = 2 * Math.PI * r;
+  return (
+    <>
+      <svg width="24" height="24" viewBox="0 0 24 24" className={`donut ${value === null ? "none" : level(value)}`} aria-hidden="true">
+        <circle cx="12" cy="12" r={r} className="track" />
+        {value !== null && (
+          <circle cx="12" cy="12" r={r} className="arc" strokeDasharray={`${(value / 100) * c} ${c}`} transform="rotate(-90 12 12)" />
+        )}
+      </svg>
+      <span className="donut-lbl">{label}</span>
+      <span className="donut-val">{value === null ? "—" : `${Math.round(value)}%`}</span>
+    </>
   );
 }
 

@@ -4,16 +4,26 @@
 //! - `state.json`                       contexts, accounts, open tabs, settings
 //! - `accounts\<id>\`                   CLAUDE_CONFIG_DIR of each added account
 //! - `contexts\<dir>\history\<date>\<chat>.md`     past chats (see history.rs)
+//!
+//! Development builds use `%APPDATA%\GianClaudio-dev` instead (see [`DEV`]).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde::Serialize;
 
-const KEYRING_SERVICE: &str = "GianClaudio";
+/// A development build (`npm run tauri dev`). It keeps its own data folder,
+/// stored keys, tray tooltip and window title, and leaves the global shortcut
+/// and "start with Windows" to the installed app, so both can run side by side:
+/// the installed app to talk to Claude, the dev build to try the changes.
+pub const DEV: bool = cfg!(debug_assertions);
+
+const KEYRING_SERVICE: &str = if DEV { "GianClaudio-dev" } else { "GianClaudio" };
 
 pub fn data_dir() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("GianClaudio")
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(if DEV { "GianClaudio-dev" } else { "GianClaudio" })
 }
 
 /// Keep ids usable as folder names whatever the frontend sends.

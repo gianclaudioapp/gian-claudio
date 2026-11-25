@@ -22,6 +22,15 @@ npm install
 npm run tauri dev
 ```
 
+The dev build (any debug build, in fact) runs side by side with the installed app without touching it:
+- its data folder is `%APPDATA%\GianClaudio-dev`, so it has its own contexts, accounts and history. It starts with only the default account, which uses your normal Claude Code login;
+- API keys go in a separate Windows Credential Manager entry;
+- the window title and tray tooltip say "(dev)";
+- the <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>G</kbd> shortcut and "Start with Windows" stay with the installed app;
+- a DEV badge sits in the title bar, and closing the window quits the dev build instead of hiding it in the tray.
+
+You can develop Gian Claudio from inside Gian Claudio. Talk to Claude in the **installed** app, not in the dev build: the dev build restarts on every Rust change, and a chat inside it would restart too.
+
 Before opening a pull request, run the same checks as CI:
 
 ```powershell

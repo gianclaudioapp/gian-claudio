@@ -25,6 +25,7 @@ export const itSettings: Record<string, string> = {
   "● Claude: done, the tests pass (7/7).": "● Claude: fatto, i test passano (7/7).",
   "Window": "Finestra",
   "Press {keys} to bring up the app from any program.": "Con {keys} richiami l'app da qualsiasi programma.",
+  "Development build: {keys} and starting with Windows stay with the installed app.": "Versione di sviluppo: {keys} e l'avvio con Windows restano all'app installata.",
   "Minimize to the system tray when closed": "Chiudendo, riduci nell'area di notifica",
   "Chats in progress keep running. To quit for real, use “Quit” from the icon near the clock.": "Le chat in corso continuano. Per uscire davvero usa «Esci» dall'icona vicino all'orologio.",
   "Start with Windows": "Avvia con Windows",

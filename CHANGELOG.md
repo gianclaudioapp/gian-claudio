@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-11-25
+
+### Added
+- App menu behind the ☰ button next to the logo: File, Edit, View, Window and Help, keyboard friendly. <kbd>F11</kbd> toggles full screen.
+- Help ▸ About Gian Claudio: app and Claude Code versions, update check, project links.
+- Links in the terminal: hold <kbd>Ctrl</kbd> over a file path or URL to highlight it, <kbd>Ctrl</kbd>+click to open it with its default program. Paths with spaces and paths relative to the working folder work too.
+- Chat header: separate rings for the 5-hour session limit and the chat's context, and the context split into base (instructions, tools, memory), conversation and free space.
+
+### Changed
+- "New context" has its own row in the sidebar.
+- "New chat" explains in a tooltip why it is disabled while Claude works.
+- Development builds run side by side with the installed app: their own data folder, a DEV badge, and the window's × quits instead of hiding to the tray.
+
 ## [0.1.0] - 2026-11-25
 
 ### Added

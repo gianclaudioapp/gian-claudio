@@ -39,7 +39,7 @@ Everything stays on your PC, in `%APPDATA%\GianClaudio`:
 - `accounts\<id>\`: the Claude Code config folder of each added account;
 - `contexts\<context>\history\<YYYY-MM-DD>\<chat>.md`: past chats with their summaries.
 
-The app itself only goes online to check for new versions of Claude Code (npm registry). Your chats go to Anthropic through Claude Code, exactly as when you use it in a terminal.
+The app itself only goes online to check for new versions of Claude Code (npm registry) and of Gian Claudio (GitHub releases). Your chats go to Anthropic through Claude Code, exactly as when you use it in a terminal.
 
 ## Development
 
@@ -54,6 +54,8 @@ Requirements:
 npm install
 npm run tauri dev
 ```
+
+The dev build is a sandbox: it keeps its data in `%APPDATA%\GianClaudio-dev` and leaves the global shortcut and "start with Windows" to the installed app. So you can develop Gian Claudio with Gian Claudio: talk to Claude in the installed app and try the changes in the dev build, which restarts on every Rust change.
 
 Build the installer (NSIS):
 

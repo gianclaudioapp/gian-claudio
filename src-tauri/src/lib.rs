@@ -1,5 +1,6 @@
 mod clipboard;
 mod history;
+mod links;
 mod pty;
 mod status;
 mod store;
@@ -28,6 +29,11 @@ pub fn run() {
             history::migrate_legacy_layout();
             status::setup_tray(app)?;
             status::setup_shortcut(app)?;
+            if store::DEV {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.set_title("Gian Claudio (dev)");
+                }
+            }
             // Started with Windows: stay in the tray until called.
             if std::env::args().any(|a| a == "--minimized") {
                 if let Some(w) = app.get_webview_window("main") {
@@ -37,9 +43,10 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing hides to the tray, so running chats keep going.
+            // Closing hides to the tray, so running chats keep going. Not in a
+            // dev build: there the × really quits, like any test run.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if status::CLOSE_TO_TRAY.load(Ordering::Relaxed) {
+                if !store::DEV && status::CLOSE_TO_TRAY.load(Ordering::Relaxed) {
                     api.prevent_close();
                     let _ = window.hide();
                 }
@@ -62,8 +69,11 @@ pub fn run() {
             store::context_remove_files,
             store::open_folder,
             store::reveal_file,
+            links::link_resolve,
+            links::link_open,
             store::claude_latest,
             store::claude_check,
+            usage::context_base,
             history::history_save,
             history::history_list,
             history::transcript_read,

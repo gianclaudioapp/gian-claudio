@@ -113,14 +113,16 @@ export function SettingsPage({ settings, dataDir, claudeVersion, claudeLatest, o
             </div>
           </section>
           <section className="set-row">
-            <div><h2>{t("Window")}</h2><p>{tn("Press {keys} to bring up the app from any program.", { keys: <><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>G</kbd></> })}</p></div>
+            <div><h2>{t("Window")}</h2><p>{import.meta.env.DEV
+              ? tn("Development build: {keys} and starting with Windows stay with the installed app.", { keys: <><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>G</kbd></> })
+              : tn("Press {keys} to bring up the app from any program.", { keys: <><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>G</kbd></> })}</p></div>
             <div className="set-ctl col">
               <label className="check">
-                <input type="checkbox" checked={settings.closeToTray} onChange={(e) => onChange({ ...settings, closeToTray: e.target.checked })} />
+                <input type="checkbox" checked={settings.closeToTray && !import.meta.env.DEV} disabled={import.meta.env.DEV} onChange={(e) => onChange({ ...settings, closeToTray: e.target.checked })} />
                 <span><b>{t("Minimize to the system tray when closed")}</b><span className="rad-p">{t("Chats in progress keep running. To quit for real, use “Quit” from the icon near the clock.")}</span></span>
               </label>
               <label className="check">
-                <input type="checkbox" checked={!!autostart} disabled={autostart === null} onChange={(e) => toggleAutostart(e.target.checked)} />
+                <input type="checkbox" checked={!!autostart} disabled={autostart === null || import.meta.env.DEV} onChange={(e) => toggleAutostart(e.target.checked)} />
                 <span><b>{t("Start with Windows")}</b><span className="rad-p">{t("Starts minimized in the system tray.")}</span></span>
               </label>
               {autostartErr && <span className="err">{autostartErr}</span>}

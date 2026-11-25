@@ -5,6 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { t } from "./i18n";
+import { registerTerminalLinks } from "./terminalLinks";
 
 export interface LaunchSpec {
   /** PTY session id (one per running chat). */
@@ -28,6 +29,10 @@ interface Props {
   /** Font size in px (from the text-size setting). */
   fontSize: number;
 }
+
+export interface TerminalActions { copy: () => void; paste: () => void; selectAll: () => void; hasSelection: () => boolean }
+/** Actions of each open terminal by PTY id, for the app menu (Edit). */
+export const terminalActions = new Map<string, TerminalActions>();
 
 /** The terminal is always dark, whatever the app theme (matches --term-bg). */
 const BG = "#1D1D21";
@@ -70,7 +75,7 @@ export function Terminal({ spec, visible, onActivity, onExit, onTitle, fontSize 
   // Latest callbacks without re-running the spawn effect.
   const cb = useRef({ onActivity, onExit, onTitle });
   cb.current = { onActivity, onExit, onTitle };
-  const actions = useRef<{ copy: () => void; paste: () => void; selectAll: () => void; hasSelection: () => boolean } | null>(null);
+  const actions = useRef<TerminalActions | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; canCopy: boolean } | null>(null);
 
   useEffect(() => {
@@ -106,6 +111,8 @@ export function Terminal({ spec, visible, onActivity, onExit, onTitle, fontSize 
       }),
     );
     const title = xterm.onTitleChange((s) => cb.current.onTitle?.(s));
+    // Ctrl+hover shows paths and URLs in negative, Ctrl+click opens them.
+    const links = registerTerminalLinks(xterm, spec.cwd, { fg: FG, bg: BG });
 
     // Copy / paste like Windows Terminal: Ctrl+C copies when text is selected
     // (otherwise it still interrupts Claude), Ctrl+V pastes, and so do the
@@ -127,6 +134,7 @@ export function Terminal({ spec, visible, onActivity, onExit, onTitle, fontSize 
       return true;
     });
     actions.current = { copy: () => copySelection(xterm), paste: () => pasteInto(xterm), selectAll: () => xterm.selectAll(), hasSelection: () => xterm.hasSelection() };
+    terminalActions.set(ptyId, actions.current);
 
     (async () => {
       unlisten.push(
@@ -168,6 +176,8 @@ export function Terminal({ spec, visible, onActivity, onExit, onTitle, fontSize 
       input.dispose();
       resize.dispose();
       title.dispose();
+      links.dispose();
+      terminalActions.delete(ptyId);
       osc.forEach((d) => d.dispose());
       unlisten.forEach((u) => u());
       invoke("pty_kill", { id: ptyId }).catch(() => {});

@@ -74,4 +74,27 @@ export const itApp: Record<string, string> = {
   "Downloading the update… {n}%": "Scarico l'aggiornamento… {n}%",
   "The app checks for new versions when it starts. Updating restarts it; open chats resume afterwards.":
     "All'avvio l'app controlla se ci sono nuove versioni. L'aggiornamento la riavvia; le chat aperte riprendono subito dopo.",
+
+  // AppMenu.tsx, About.tsx
+  "Menu": "Menu",
+  "File": "File",
+  "Edit": "Modifica",
+  "View": "Visualizza",
+  "Window": "Finestra",
+  "Help": "Aiuto",
+  "Light theme": "Tema chiaro",
+  "Dark theme": "Tema scuro",
+  "Larger terminal text": "Testo del terminale più grande",
+  "Smaller terminal text": "Testo del terminale più piccolo",
+  "Full screen": "Schermo intero",
+  "Close to tray": "Chiudi nella tray",
+  "About Gian Claudio": "Informazioni su Gian Claudio",
+  "Version": "Versione",
+  "Updates": "Aggiornamenti",
+  "Not installed": "Non installato",
+  "Up to date": "Aggiornata",
+  "Couldn't check": "Controllo non riuscito",
+  "Release notes": "Note di rilascio",
+  "MIT License": "Licenza MIT",
+  "Development build: its own data, the × quits": "Build di sviluppo: dati separati, la × chiude l'app",
 };

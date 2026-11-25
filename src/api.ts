@@ -90,6 +90,9 @@ export const api = {
   /** Plan usage limits per account (Pro/Max/Ultra), last reported by Claude Code. */
   accountLimitsRead: (ids: string[]) =>
     invoke<Record<string, AccountLimits>>("account_limits_read", { ids }).catch(() => ({}) as Record<string, AccountLimits>),
+  /** Tokens the chat's context held at its first request (system prompt, tools, memory). */
+  contextBase: (item: { configDir: string | null; cwd: string; sessionId: string }) =>
+    invoke<number | null>("context_base", { item }).catch(() => null),
   usageSessions: (items: { configDir: string | null; cwd: string; sessionId: string }[], since: string | null) =>
     invoke<SessionUsage[]>("usage_sessions", { items, since }).catch(() => [] as SessionUsage[]),
   statusRead: (ids: string[]) => invoke<Record<string, { state: string; ts: number }>>("status_read", { ids }).catch(() => ({}) as Record<string, { state: string; ts: number }>),

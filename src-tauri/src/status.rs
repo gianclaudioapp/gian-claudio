@@ -171,12 +171,16 @@ pub fn set_close_to_tray(enabled: bool) {
 #[tauri::command]
 pub fn autostart_get(app: AppHandle) -> bool {
     use tauri_plugin_autostart::ManagerExt;
-    app.autolaunch().is_enabled().unwrap_or(false)
+    // The Windows entry is shared with the installed app: a dev build never reads or writes it.
+    !store::DEV && app.autolaunch().is_enabled().unwrap_or(false)
 }
 
 #[tauri::command]
 pub fn autostart_set(app: AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
+    if store::DEV {
+        return Err("Not available in development builds".into());
+    }
     let al = app.autolaunch();
     if enabled { al.enable() } else { al.disable() }.map_err(|e| e.to_string())
 }
@@ -211,7 +215,7 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &quit])?;
     let mut builder = TrayIconBuilder::with_id("main")
-        .tooltip("Gian Claudio")
+        .tooltip(if store::DEV { "Gian Claudio (dev)" } else { "Gian Claudio" })
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -233,8 +237,12 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 }
 
 /// Ctrl+Alt+G from anywhere shows the app (or hides it when it is in front).
+/// Not in dev builds: the shortcut stays with the installed app.
 pub fn setup_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+    if store::DEV {
+        return Ok(());
+    }
     let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyG);
     app.handle().plugin(
         tauri_plugin_global_shortcut::Builder::new()

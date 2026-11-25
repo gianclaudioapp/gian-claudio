@@ -113,6 +113,33 @@ pub async fn usage_sessions(items: Vec<SessionRef>, since: Option<String>) -> Ve
         .unwrap_or_default()
 }
 
+/// Tokens the chat's context held at its first request: the system prompt,
+/// tool definitions and memory files (plus the short first message). What the
+/// context holds beyond this is the conversation itself.
+fn read_context_base(r: &SessionRef) -> Option<u64> {
+    let path = pty::transcript_path(r.config_dir.as_deref(), &r.cwd, &r.session_id)?;
+    let raw = std::fs::read_to_string(path).ok()?;
+    raw.lines().find_map(|line| {
+        let v = serde_json::from_str::<Value>(line).ok()?;
+        if v["type"].as_str() != Some("assistant") || v["isSidechain"].as_bool() == Some(true) {
+            return None;
+        }
+        let msg = &v["message"];
+        let usage = &msg["usage"];
+        if !usage.is_object() || msg["model"].as_str().is_none_or(|m| m.is_empty() || m.starts_with('<')) {
+            return None;
+        }
+        let total = num(&usage["input_tokens"]) + num(&usage["cache_read_input_tokens"]) + num(&usage["cache_creation_input_tokens"]);
+        (total > 0).then_some(total)
+    })
+}
+
+/// See [`read_context_base`]; None until Claude has answered once.
+#[tauri::command]
+pub async fn context_base(item: SessionRef) -> Option<u64> {
+    tauri::async_runtime::spawn_blocking(move || read_context_base(&item)).await.ok().flatten()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,6 +161,24 @@ mod tests {
         assert_eq!((t.input, t.output, t.cache_read, t.cache_write_1h, t.requests), (20, 10, 200, 40, 2));
         let since = read_usage(&r, Some("2026-11-10T00:00:00Z"));
         assert_eq!(since.by_model["claude-opus-5-5"].requests, 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn context_base_is_the_first_request() {
+        let dir = std::env::temp_dir().join("gc-ctxbase-test");
+        let cwd = r"C:\x\z";
+        let r = SessionRef { config_dir: Some(dir.to_string_lossy().into()), cwd: cwd.into(), session_id: "s2".into() };
+        let p = pty::transcript_path(r.config_dir.as_deref(), cwd, "s2").unwrap();
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        let raw = [
+            r#"{"type":"user","message":{"content":"hi"}}"#,
+            r#"{"type":"assistant","message":{"model":"<synthetic>","usage":{"input_tokens":1}}}"#,
+            r#"{"type":"assistant","message":{"model":"claude-opus-5-5","usage":{"input_tokens":3,"cache_creation_input_tokens":15000,"cache_read_input_tokens":2000,"output_tokens":40}}}"#,
+            r#"{"type":"assistant","message":{"model":"claude-opus-5-5","usage":{"input_tokens":5,"cache_read_input_tokens":30000}}}"#,
+        ].join("\n");
+        std::fs::write(&p, raw).unwrap();
+        assert_eq!(read_context_base(&r), Some(17003));
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

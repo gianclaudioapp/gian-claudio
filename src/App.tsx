@@ -3,14 +3,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { SearchPage } from "./SearchPage";
-import { UsageDonut, UsagePage } from "./Usage";
+import { ChatRef, UsageDonut, UsagePage } from "./Usage";
 import { AccountLimits, ContextLine, api } from "./api";
 import { AccountsPage } from "./AccountsPage";
 import { ContextForm, ContextInput } from "./ContextForm";
 import { HistoryPage } from "./HistoryPage";
 import { Icon, IconName } from "./icons";
 import { Logo } from "./Logo";
-import { Account, AppState, Chat, Context, HistoryEntry, newId, timeAgo, accVars, uniqueDirName, workingDir, folderName, terminalFontSize, isNewerVersion, versionNumber } from "./model";
+import { AppMenu, AppMenuGroup } from "./AppMenu";
+import { About } from "./About";
+import { terminalActions } from "./Terminal";
+import { Account, AppState, Chat, Context, HistoryEntry, newId, timeAgo, accVars, uniqueDirName, workingDir, folderName, terminalFontSize, isNewerVersion, versionNumber, TERMINAL_SCALE_MAX, TERMINAL_SCALE_MIN } from "./model";
 import { ReadOnlyChat } from "./ReadOnlyChat";
 import { SettingsPage } from "./SettingsPage";
 import { LaunchSpec, Terminal } from "./Terminal";
@@ -51,6 +54,7 @@ export default function App() {
   const [appVer, setAppVer] = useState<string | null>(null);
   const [appUpdate, setAppUpdate] = useState<AppUpdateState>({ status: "idle" });
   const [appUpdateAsk, setAppUpdateAsk] = useState(false);
+  const [about, setAbout] = useState(false);
   const [runs, setRuns] = useState<Record<string, LaunchSpec>>({});
   const [aux, setAux] = useState<Record<string, AuxTab>>({});
   const [readEntries, setReadEntries] = useState<Record<string, HistoryEntry>>({});
@@ -103,6 +107,19 @@ export default function App() {
     root.dataset.theme = state.settings.theme;
     root.style.setProperty("--accent", state.settings.accent);
   }, [state?.settings.theme, state?.settings.accent]);
+
+  // F11 toggles full screen (captured first, so the terminal doesn't get it).
+  useEffect(() => {
+    const key = async (e: KeyboardEvent) => {
+      if (e.key !== "F11" || e.ctrlKey || e.altKey || e.shiftKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const w = getCurrentWindow();
+      await w.setFullscreen(!(await w.isFullscreen()));
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, []);
 
   const historyRoot = useCallback((dirName: string) => `${paths.dataDir}\\contexts\\${dirName}\\history`, [paths.dataDir]);
 
@@ -539,7 +556,47 @@ export default function App() {
     minimize: () => getCurrentWindow().minimize(),
     toggleMaximize: () => getCurrentWindow().toggleMaximize(),
     close: () => getCurrentWindow().close(),
+    toggleFullscreen: async () => {
+      const w = getCurrentWindow();
+      await w.setFullscreen(!(await w.isFullscreen()));
+    },
   };
+
+  /** The hamburger menu; read when it opens, so the Edit items see the current selection. */
+  function menuGroups(): AppMenuGroup[] {
+    const s = state!;
+    const term = active && runs[active] ? terminalActions.get(runs[active].ptyId) : undefined;
+    const setScale = (d: number) => update((x) => ({
+      ...x, settings: { ...x.settings, terminalScale: Math.min(TERMINAL_SCALE_MAX, Math.max(TERMINAL_SCALE_MIN, x.settings.terminalScale + d)) },
+    }));
+    return [
+      { label: t("File"), items: [
+        { label: t("New context"), onClick: () => openTab(NEW) },
+        { label: t("Accounts"), onClick: () => openTab(ACCOUNTS) },
+        { label: t("Settings"), onClick: () => openTab(SETTINGS) },
+        { label: t("Quit"), separator: true, onClick: () => api.quit() },
+      ] },
+      { label: t("Edit"), items: [
+        { label: t("Copy"), hint: "Ctrl+C", disabled: !term?.hasSelection(), onClick: () => term?.copy() },
+        { label: t("Paste"), hint: "Ctrl+V", disabled: !term, onClick: () => term?.paste() },
+        { label: t("Select all"), disabled: !term, onClick: () => term?.selectAll() },
+      ] },
+      { label: t("View"), items: [
+        { label: dark ? t("Light theme") : t("Dark theme"), onClick: () => update((x) => ({ ...x, settings: { ...x.settings, theme: dark ? "light" : "dark" } })) },
+        { label: t("Larger terminal text"), disabled: s.settings.terminalScale >= TERMINAL_SCALE_MAX, onClick: () => setScale(10) },
+        { label: t("Smaller terminal text"), disabled: s.settings.terminalScale <= TERMINAL_SCALE_MIN, onClick: () => setScale(-10) },
+        { label: t("Full screen"), hint: "F11", separator: true, onClick: win.toggleFullscreen },
+      ] },
+      { label: t("Window"), items: [
+        { label: t("Minimize"), onClick: win.minimize },
+        { label: t("Maximize"), onClick: win.toggleMaximize },
+        { label: s.settings.closeToTray && !import.meta.env.DEV ? t("Close to tray") : t("Close"), onClick: win.close },
+      ] },
+      { label: t("Help"), separator: true, items: [
+        { label: t("About Gian Claudio"), onClick: () => setAbout(true) },
+      ] },
+    ];
+  }
 
   function tabMeta(id: string): { label: string; icon?: IconName; dot?: boolean; waiting?: boolean; acc?: Account } | null {
     if (id === NEW) return { label: t("New context"), icon: "plus" };
@@ -578,10 +635,11 @@ export default function App() {
     <div className="app">
       <aside>
         <div className="brand" data-tauri-drag-region>
+          <AppMenu groups={menuGroups} />
           <Logo height={20} />
           Gian Claudio
-          <button className="add" onClick={() => openTab(NEW)}><Icon name="plus" size={14} />{t("Context")}</button>
         </div>
+        <button className="new-ctx" onClick={() => openTab(NEW)}><Icon name="plus" size={14} />{t("New context")}</button>
         <label className="search">
           <Icon name="search" />
           <input placeholder={t("Search")} value={query} onChange={(e) => setQuery(e.target.value)}
@@ -634,6 +692,11 @@ export default function App() {
 
       <div className="wrap">
         <div className="titlebar" data-tauri-drag-region>
+          {import.meta.env.DEV && (
+            <span className="dev-badge" data-tauri-drag-region title={t("Development build: its own data, the × quits")}>
+              <Icon name="wrench" size={13} /><span>DEV</span>
+            </span>
+          )}
           <div className="win">
             <button title={t("Minimize")} onClick={win.minimize}><Icon name="min" /></button>
             <button title={t("Maximize")} onClick={win.toggleMaximize}><Icon name="max" /></button>
@@ -712,6 +775,7 @@ export default function App() {
           {activeCtx && (
             <ChatHeader ctx={activeCtx} working={isWorking(activeCtx.id)} waiting={isWaiting(activeCtx.id)} archiving={!!archiving[activeCtx.id]}
               limits={limits[activeCtx.accountId] ?? null} line={lines[activeCtx.id] ?? null}
+              chatRef={activeCtx.chat ? { configDir: accountOf(activeCtx.accountId).configDir, cwd: workingDir(activeCtx), sessionId: activeCtx.chat.sessionId } : null}
               onUsage={() => openTab(`usage:${activeCtx.accountId}`)}
               onRename={(name) => activeCtx.chat && patchContext(activeCtx.id, { chat: { ...activeCtx.chat, name, nameLocked: true } })}
               onNewChat={() => startNewChat(activeCtx)}
@@ -767,6 +831,10 @@ export default function App() {
           { label: t("Delete context"), icon: "trash", danger: true, onClick: () => setDeleting(ctxMenu.ctx) },
         ]} />
       )}
+      {about && (
+        <About appVersion={appVer} claudeVersion={claudeVersion} appUpdate={appUpdate}
+          onCheck={() => checkApp(false)} onInstall={() => { setAbout(false); installApp(); }} onClose={() => setAbout(false)} />
+      )}
       {appUpdateAsk && (appUpdate.status === "available" || appUpdate.status === "installing") && (
         <Dialog title={t("Update Gian Claudio?")} width={480} onClose={() => appUpdate.status !== "installing" && setAppUpdateAsk(false)}>
           <div className="dbody">
@@ -799,8 +867,8 @@ export default function App() {
   );
 }
 
-function ChatHeader({ ctx, working, waiting, archiving, limits, line, onUsage, onRename, onNewChat, onHistory, onEdit, onDelete }: {
-  ctx: Context; working: boolean; waiting: boolean; archiving: boolean; limits: AccountLimits | null; line: ContextLine | null; onUsage: () => void;
+function ChatHeader({ ctx, working, waiting, archiving, limits, line, chatRef, onUsage, onRename, onNewChat, onHistory, onEdit, onDelete }: {
+  ctx: Context; working: boolean; waiting: boolean; archiving: boolean; limits: AccountLimits | null; line: ContextLine | null; chatRef: ChatRef | null; onUsage: () => void;
   onRename: (name: string) => void; onNewChat: () => void; onHistory: () => void; onEdit: () => void; onDelete: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -831,9 +899,8 @@ function ChatHeader({ ctx, working, waiting, archiving, limits, line, onUsage, o
       <div className="right">
         {archiving && <span className="why">{t("Saving the previous chat to the history…")}</span>}
         {waiting && <span className="why waiting-label"><span className="dot waiting" />{t("Claude is waiting for your answer")}</span>}
-        {working && !archiving && <span className="why">{t("Available when Claude is done")}</span>}
-        <UsageDonut limits={limits} line={line} onOpenUsage={onUsage} />
-        <button className="btn" disabled={working} onClick={onNewChat}><Icon name="plus" size={14} />{t("New chat")}</button>
+        <UsageDonut limits={limits} line={line} chat={chatRef} onOpenUsage={onUsage} />
+        <button className="btn" disabled={working} title={working ? t("Available when Claude is done") : undefined} onClick={onNewChat}><Icon name="plus" size={14} />{t("New chat")}</button>
         <Menu items={[
           { label: t("Past chats"), icon: "clock", onClick: onHistory },
           { label: t("Edit context"), icon: "pen", onClick: onEdit },
