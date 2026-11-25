@@ -1,0 +1,46 @@
+[package]
+name = "gian-claudio"
+version = "0.1.0"
+description = "Desktop app to manage Claude Code sessions across multiple accounts"
+authors = ["DazornSama"]
+license = "MIT"
+repository = "https://github.com/gianclaudioapp/gian-claudio"
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "gian_claudio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+portable-pty = "0.9"
+tauri-plugin-dialog = "2"
+dirs = "6"
+keyring = { version = "3", features = ["windows-native"] }
+chrono = "0.4"
+tauri-plugin-notification = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-global-shortcut = "2"
+arboard = "3"
+png = "0.17"
+ureq = "2"
+
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
