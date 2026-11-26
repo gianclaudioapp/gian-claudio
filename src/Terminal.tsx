@@ -28,9 +28,11 @@ interface Props {
   onTitle?: (title: string) => void;
   /** Font size in px (from the text-size setting). */
   fontSize: number;
+  /** Asked when the terminal is shown: take the keyboard focus? (always when absent) */
+  focusOnShow?: () => boolean;
 }
 
-export interface TerminalActions { copy: () => void; paste: () => void; selectAll: () => void; hasSelection: () => boolean }
+export interface TerminalActions { copy: () => void; paste: () => void; selectAll: () => void; hasSelection: () => boolean; focus: () => void }
 /** Actions of each open terminal by PTY id, for the app menu (Edit). */
 export const terminalActions = new Map<string, TerminalActions>();
 
@@ -68,13 +70,15 @@ function xColor(hex: string): string {
 }
 
 /** One xterm.js view bound to one `claude` process in a pseudo-terminal. */
-export function Terminal({ spec, visible, onActivity, onExit, onTitle, fontSize }: Props) {
+export function Terminal({ spec, visible, onActivity, onExit, onTitle, fontSize, focusOnShow }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const fit = useRef<FitAddon | null>(null);
   const term = useRef<XTerm | null>(null);
   // Latest callbacks without re-running the spawn effect.
   const cb = useRef({ onActivity, onExit, onTitle });
   cb.current = { onActivity, onExit, onTitle };
+  const wantsFocus = useRef(focusOnShow);
+  wantsFocus.current = focusOnShow;
   const actions = useRef<TerminalActions | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; canCopy: boolean } | null>(null);
 
@@ -133,7 +137,7 @@ export function Terminal({ spec, visible, onActivity, onExit, onTitle, fontSize 
       }
       return true;
     });
-    actions.current = { copy: () => copySelection(xterm), paste: () => pasteInto(xterm), selectAll: () => xterm.selectAll(), hasSelection: () => xterm.hasSelection() };
+    actions.current = { copy: () => copySelection(xterm), paste: () => pasteInto(xterm), selectAll: () => xterm.selectAll(), hasSelection: () => xterm.hasSelection(), focus: () => xterm.focus() };
     terminalActions.set(ptyId, actions.current);
 
     (async () => {
@@ -200,7 +204,7 @@ export function Terminal({ spec, visible, onActivity, onExit, onTitle, fontSize 
     if (visible) {
       requestAnimationFrame(() => {
         fit.current?.fit();
-        term.current?.focus();
+        if (!wantsFocus.current || wantsFocus.current()) term.current?.focus();
       });
     }
   }, [visible]);

@@ -27,6 +27,28 @@ export interface Chat {
   nameLocked?: boolean;
 }
 
+export interface SandboxInfo {
+  parentId: string;
+  /** Name of the chat it was detached from. */
+  origin: string;
+  createdAt: number;
+  /** "git": worktree of `repo` on a detached HEAD; "copy": copy of a plain folder. */
+  kind: "git" | "copy";
+  /** The sandbox folder (worktree or copy). */
+  root: string;
+  /** Its own files (prompt.md); parent of `root`. */
+  meta: string;
+  repo: string | null;
+  /** Commit the changes are measured against (moves on after "apply"). */
+  base: string | null;
+  /** Commit the sandbox started from (git): where its branch starts. */
+  start?: string | null;
+  /** Branch created from it (git); later commits go on top of it. */
+  branch?: string;
+  /** Session it was forked from: used until the forked chat exists. */
+  forkFrom: string;
+}
+
 export interface Context {
   id: string;
   name: string;
@@ -39,6 +61,16 @@ export interface Context {
   /** The one current chat; null until the first one is started. */
   chat: Chat | null;
   lastUsed: number | null;
+  /** Shell of the terminal panel (a `ShellInfo.id`); PowerShell when unset. */
+  shell?: string;
+  /** Ignored files last picked when detaching a sandbox (remembered per context). */
+  sandboxCopy?: string[];
+  /**
+   * Set on a sandbox: a chat detached into its own folder (see sandbox.rs). It is
+   * stored as a context so it runs like one, but it's hidden from the sidebar and
+   * has a single chat. It shares its parent's account and history folder.
+   */
+  sandbox?: SandboxInfo;
 }
 
 export type SummaryModel = "haiku" | "sonnet" | "off";
@@ -53,6 +85,8 @@ export interface Settings {
   closeToTray: boolean;
   /** Terminal text size in percent of the base size (50–150). */
   terminalScale: number;
+  /** Terminal panel next to Claude: where it sits and its height (bottom) or width (right) in px. */
+  shellPanel?: { side: "bottom" | "right"; size: number };
   /** Interface language; "system" follows Windows (English when not Italian). */
   language: LangSetting;
   /** Bumped when a default changes, to migrate older state files. */

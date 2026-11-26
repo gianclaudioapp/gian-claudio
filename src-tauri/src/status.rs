@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::store;
@@ -30,12 +30,69 @@ pub fn hook_main(args: &[String]) {
     if !matches!(state.as_str(), "working" | "waiting" | "idle") {
         return;
     }
-    // Drain the hook's JSON input so Claude Code never blocks writing it.
-    let _ = std::io::copy(&mut std::io::stdin(), &mut std::io::sink());
+    // Read the hook's JSON input (always, so Claude Code never blocks writing it).
+    let mut raw = String::new();
+    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut raw);
+    let input: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
     let dir = status_dir();
     let _ = std::fs::create_dir_all(&dir);
-    let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-    let _ = std::fs::write(dir.join(id), format!("{state} {ts}"));
+    let path = dir.join(&id);
+    let ts = now_ms() as u64;
+    let prev = std::fs::read_to_string(&path).ok().and_then(|t| parse_status(&t));
+    let mut st = Status { state: state.clone(), ts, since: ts, tool: None, detail: None, message: None };
+    if let Some(p) = &prev {
+        if p.state == state.as_str() {
+            st.since = p.since; // same state: keep when it started
+        }
+        // A permission prompt is about the tool that was about to run.
+        if state.as_str() == "waiting" {
+            st.tool = p.tool.clone();
+            st.detail = p.detail.clone();
+        }
+    }
+    if let Some(tool) = input["tool_name"].as_str() {
+        st.tool = Some(tool.to_string());
+        st.detail = tool_detail(tool, &input["tool_input"], input["cwd"].as_str().unwrap_or(""));
+    }
+    if let Some(m) = input["message"].as_str() {
+        st.message = Some(m.chars().take(300).collect());
+    }
+    if state.as_str() == "idle" || input["hook_event_name"].as_str() == Some("UserPromptSubmit") {
+        st.tool = None;
+        st.detail = None;
+    }
+    let _ = std::fs::write(path, serde_json::to_string(&st).unwrap_or_default());
+}
+
+/// What a tool call is about, in a few words: the command, the file, the pattern.
+fn tool_detail(tool: &str, input: &serde_json::Value, cwd: &str) -> Option<String> {
+    let s = |k: &str| input[k].as_str().map(str::to_string);
+    let rel = |p: String| {
+        let norm = |x: &str| x.replace('\\', "/").to_lowercase();
+        let (np, nc) = (norm(&p), norm(cwd).trim_end_matches('/').to_string());
+        if !nc.is_empty() && np.starts_with(&format!("{nc}/")) { p[nc.len() + 1..].to_string() } else { p }
+    };
+    let text = match tool {
+        "Bash" | "PowerShell" => s("command"),
+        "Read" | "Write" | "Edit" | "MultiEdit" | "NotebookEdit" => s("file_path").or_else(|| s("notebook_path")).map(rel),
+        "Grep" | "Glob" => s("pattern"),
+        "WebFetch" => s("url"),
+        "WebSearch" => s("query"),
+        "Task" | "Agent" => s("description"),
+        _ => None,
+    }?;
+    let line = text.lines().next().unwrap_or("").trim().to_string();
+    Some(if line.chars().count() > 140 { line.chars().take(140).collect::<String>() + "…" } else { line })
+}
+
+/// The status file: JSON, or the older "state ts".
+fn parse_status(text: &str) -> Option<Status> {
+    if let Ok(s) = serde_json::from_str::<Status>(text) {
+        return Some(s);
+    }
+    let (state, ts) = text.split_once(' ')?;
+    let ts = ts.trim().parse().unwrap_or(0);
+    Some(Status { state: state.to_string(), ts, since: ts, tool: None, detail: None, message: None })
 }
 
 fn now_ms() -> u128 {
@@ -101,10 +158,22 @@ pub fn status_settings_file(pty_id: String, account_id: String) -> Result<String
     Ok(path.to_string_lossy().into_owned())
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Status {
     state: String,
+    /// Last report, Unix ms.
     ts: u64,
+    /// When this state began (Unix ms).
+    #[serde(default)]
+    since: u64,
+    /// The tool Claude is using or asks permission for, and what it is about.
+    #[serde(default)]
+    tool: Option<String>,
+    #[serde(default)]
+    detail: Option<String>,
+    /// Claude Code's own text for a notification (permission, question).
+    #[serde(default)]
+    message: Option<String>,
 }
 
 /// Latest hook state of each session that has reported one.
@@ -114,8 +183,7 @@ pub fn status_read(ids: Vec<String>) -> HashMap<String, Status> {
     ids.into_iter()
         .filter_map(|id| {
             let text = std::fs::read_to_string(dir.join(store::safe_name(&id))).ok()?;
-            let (state, ts) = text.split_once(' ')?;
-            Some((id, Status { state: state.to_string(), ts: ts.trim().parse().unwrap_or(0) }))
+            Some((id, parse_status(&text)?))
         })
         .collect()
 }
@@ -262,4 +330,27 @@ pub fn setup_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
     // Another program may own the combination: the app still starts.
     let _ = app.global_shortcut().register(shortcut);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_details_are_short_and_relative() {
+        let cwd = r"C:\DEV\site";
+        let v = |j: &str| serde_json::from_str::<serde_json::Value>(j).unwrap();
+        assert_eq!(tool_detail("Bash", &v(r#"{"command":"npm test\nmore"}"#), cwd).as_deref(), Some("npm test"));
+        assert_eq!(tool_detail("Edit", &v(r#"{"file_path":"C:\\DEV\\site\\src\\App.tsx"}"#), cwd).as_deref(), Some(r"src\App.tsx"));
+        assert_eq!(tool_detail("Grep", &v(r#"{"pattern":"todo"}"#), cwd).as_deref(), Some("todo"));
+        assert_eq!(tool_detail("Unknown", &v("{}"), cwd), None);
+    }
+
+    #[test]
+    fn old_status_files_still_read() {
+        let s = parse_status("working 1234").unwrap();
+        assert_eq!((s.state.as_str(), s.ts, s.since), ("working", 1234, 1234));
+        let j = parse_status(r#"{"state":"waiting","ts":5,"since":3,"tool":"Bash","detail":"ls","message":null}"#).unwrap();
+        assert_eq!((j.since, j.detail.as_deref()), (3, Some("ls")));
+    }
 }

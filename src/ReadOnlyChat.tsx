@@ -63,7 +63,7 @@ const mdComponents: Components = {
 };
 
 /** Claude's Markdown (GitHub flavour: tables, task lists). Raw HTML is shown as text. */
-function Rich({ text }: { text: string }) {
+export function Rich({ text }: { text: string }) {
   return <div className="md"><Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>{text}</Markdown></div>;
 }
 

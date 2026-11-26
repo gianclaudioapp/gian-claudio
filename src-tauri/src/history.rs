@@ -262,7 +262,7 @@ fn slug(s: &str) -> String {
 
 /// Ask Claude about a session in a throwaway fork, so the original transcript
 /// is not touched and nothing new is saved to disk.
-fn ask_session(session_id: &str, cwd: &str, config_dir: Option<&str>, api_key_account: Option<&str>, model: &str, prompt: &str) -> Option<String> {
+pub(crate) fn ask_session(session_id: &str, cwd: &str, config_dir: Option<&str>, api_key_account: Option<&str>, model: &str, prompt: &str) -> Option<String> {
     if model == "off" {
         return None;
     }

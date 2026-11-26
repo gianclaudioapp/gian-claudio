@@ -1,6 +1,6 @@
 [package]
 name = "gian-claudio"
-version = "0.1.1"
+version = "0.2.0"
 description = "Desktop app to manage Claude Code sessions across multiple accounts"
 authors = ["DazornSama"]
 license = "MIT"

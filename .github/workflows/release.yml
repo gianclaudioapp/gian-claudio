@@ -50,7 +50,5 @@ jobs:
           releaseName: Gian Claudio ${{ github.ref_name }}
           releaseBody: |
             See [CHANGELOG.md](https://github.com/gianclaudioapp/gian-claudio/blob/main/CHANGELOG.md) for what changed.
-
-            **Install:** download `Gian Claudio_*_x64-setup.exe` below and run it. The installer is not code-signed: if Windows shows "Windows protected your PC", click **More info → Run anyway**. Already installed? The app offers the update at startup.
           releaseDraft: true
           prerelease: false

@@ -3,12 +3,15 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { Icon } from "./icons";
 import { Account, Context, folderName, accVars } from "./model";
 import { t, tn } from "./i18n";
+import type { ShellInfo } from "./api";
+import { shellName } from "./ShellPanel";
 
 export interface ContextInput {
   name: string;
   folders: string[];
   workingIndex: number;
   accountId: string;
+  shell?: string;
 }
 
 interface Props {
@@ -17,16 +20,19 @@ interface Props {
   /** Present when editing an existing context. */
   initial?: Context;
   historyRoot: (dirName: string) => string;
+  /** Shells found on this PC, for the terminal panel. */
+  shells: ShellInfo[];
   onSubmit: (c: ContextInput) => void;
   onCancel: () => void;
 }
 
-export function ContextForm({ accounts, contexts, initial, historyRoot, onSubmit, onCancel }: Props) {
+export function ContextForm({ accounts, contexts, initial, historyRoot, shells, onSubmit, onCancel }: Props) {
   const editing = !!initial;
   const [folders, setFolders] = useState<string[]>(initial?.folders.map((f) => f.path) ?? []);
   const [workingIndex, setWorkingIndex] = useState(initial?.workingIndex ?? 0);
   const [name, setName] = useState(initial?.name ?? "");
   const [nameTouched, setNameTouched] = useState(editing);
+  const [shell, setShell] = useState(initial?.shell ?? "powershell");
   const [accountId, setAccountId] = useState(initial?.accountId ?? accounts[0]?.id ?? "");
 
   const suggested = folders[workingIndex] ? folderName(folders[workingIndex]) : "";
@@ -86,6 +92,18 @@ export function ContextForm({ accounts, contexts, initial, historyRoot, onSubmit
         </div>
 
         <div className="fld">
+          <label className="lbl" htmlFor="ctx-shell">{t("Terminal shell")}</label>
+          <span className="hint">{t("The one that opens in the terminal next to Claude, in the working folder.")}</span>
+          <select id="ctx-shell" className="text select" value={shell} onChange={(e) => setShell(e.target.value)}>
+            {(shells.length ? shells : [{ id: "powershell", available: true }]).map((s) => (
+              <option key={s.id} value={s.id} disabled={!s.available}>
+                {shellName(s.id)}{s.id === "powershell" ? ` · ${t("default")}` : !s.available ? ` · ${t("not installed")}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="fld">
           <span className="lbl">{t("Account")}</span>
           {accounts.length === 0 && <span className="hint">{t("No accounts yet: add one from the Accounts page.")}</span>}
           {editing && <span className="hint">{t("The account can't be changed: the context's chats are saved in its profile.")}</span>}
@@ -113,7 +131,7 @@ export function ContextForm({ accounts, contexts, initial, historyRoot, onSubmit
 
         <div className="form-foot">
           <button className="btn ghost" onClick={onCancel}>{t("Cancel")}</button>
-          <button className="btn pri" disabled={!canSubmit} onClick={() => onSubmit({ name: shownName.trim(), folders, workingIndex, accountId })}>
+          <button className="btn pri" disabled={!canSubmit} onClick={() => onSubmit({ name: shownName.trim(), folders, workingIndex, accountId, shell })}>
             {editing ? t("Save") : t("Create and start chat")}
           </button>
         </div>

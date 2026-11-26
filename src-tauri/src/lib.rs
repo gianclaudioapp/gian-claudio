@@ -2,6 +2,8 @@ mod clipboard;
 mod history;
 mod links;
 mod pty;
+mod sandbox;
+mod shells;
 mod status;
 mod store;
 mod usage;
@@ -71,6 +73,21 @@ pub fn run() {
             store::reveal_file,
             links::link_resolve,
             links::link_open,
+            shells::shells_list,
+            sandbox::sandbox_scan,
+            sandbox::sandbox_git_trust,
+            sandbox::sandbox_create,
+            sandbox::sandbox_remove,
+            sandbox::sandbox_prompt_file,
+            sandbox::sandbox_changes,
+            sandbox::sandbox_diff,
+            sandbox::sandbox_summary,
+            sandbox::sandbox_summary_read,
+            sandbox::sandbox_apply,
+            sandbox::sandbox_fork,
+            sandbox::sandbox_git_info,
+            sandbox::sandbox_commit_message,
+            sandbox::sandbox_branch,
             store::claude_latest,
             store::claude_check,
             usage::context_base,
