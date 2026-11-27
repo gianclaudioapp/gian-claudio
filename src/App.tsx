@@ -1,11 +1,11 @@
-import { MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { SearchPage } from "./SearchPage";
 import { Rich } from "./ReadOnlyChat";
 import { ChatRef, UsageDonut, UsagePage } from "./Usage";
-import { AccountLimits, ContextLine, FileChange, HookStatus, SandboxSummary, ShellInfo, api } from "./api";
+import { AccountLimits, ContextLine, FileChange, GitState, HookStatus, SandboxSummary, ShellInfo, api } from "./api";
 import { AccountsPage } from "./AccountsPage";
 import { ContextForm, ContextInput } from "./ContextForm";
 import { HistoryPage } from "./HistoryPage";
@@ -19,6 +19,7 @@ import { SandboxPage } from "./SandboxPage";
 import { ChangesPanel } from "./ChangesPanel";
 import { BranchDialog, BranchInput } from "./BranchDialog";
 import { Cooking, CookingItem } from "./Cooking";
+import { GitChip, GitUntrustedChip } from "./GitChip";
 import { terminalActions } from "./Terminal";
 import { Account, AppState, Chat, Context, HistoryEntry, newId, timeAgo, accVars, uniqueDirName, workingDir, folderName, terminalFontSize, isNewerVersion, versionNumber, TERMINAL_SCALE_MAX, TERMINAL_SCALE_MIN, slug } from "./model";
 import { ReadOnlyChat } from "./ReadOnlyChat";
@@ -321,7 +322,7 @@ export default function App() {
       delete next[ctx.id];
       return next;
     });
-    setRuns((r) => ({ ...r, [ctx.id]: { ptyId, cwd, args, env, apiKeyAccount: acc.kind === "apikey" ? acc.id : null } }));
+    setRuns((r) => ({ ...r, [ctx.id]: { ptyId, cwd, args, env, apiKeyAccount: acc.kind === "apikey" ? acc.id : null, chat: { configDir: acc.configDir, cwd, sessionId: chat.sessionId } } }));
   }
 
   /** Sessions whose title came from the transcript: it wins over the terminal title. */
@@ -810,6 +811,25 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
+  // ---- git state of the open chat's working folder (not for sandboxes) ------------
+  // Read when the chat is opened, when Claude ends a turn, and when the app gets the focus back.
+  const gitCtx = state?.contexts.find((c) => c.id === state.activeTab && !c.sandbox);
+  const gitDir = gitCtx ? workingDir(gitCtx) : "";
+  const gitBusy = gitCtx ? isWorking(gitCtx.id) : false;
+  const [repo, setRepo] = useState<Record<string, GitState>>({});
+  const loadRepo = useCallback(() => {
+    if (!gitDir) return;
+    api.repoStatus(gitDir).then((r) => setRepo((x) => ({ ...x, [gitDir]: r })));
+  }, [gitDir]);
+  useEffect(() => {
+    if (gitBusy) return;
+    loadRepo();
+  }, [loadRepo, gitBusy]);
+  useEffect(() => {
+    window.addEventListener("focus", loadRepo);
+    return () => window.removeEventListener("focus", loadRepo);
+  }, [loadRepo]);
+
   const sorted = useMemo(() => {
     const q = query.trim().toLowerCase();
     return [...(state?.contexts ?? [])]
@@ -966,6 +986,9 @@ export default function App() {
                     {working && <span className="dot" />}
                     {waiting && <span className="dot waiting" />}
                     <span className="sb-chat">{c.chat?.name ?? t("No chat")}</span>
+                    {(shells[c.id]?.tabs.length ?? 0) > 0 && (
+                      <span className="sb-shells" title={t("Open terminals: {n}", { n: shells[c.id].tabs.length })}><Icon name="terminal" size={13} />{shells[c.id].tabs.length}</span>
+                    )}
                     {waiting ? <time className="waiting-label">{t("waiting for you")}</time> : <time>{working ? t("now") : timeAgo(c.lastUsed, now)}</time>}
                   </div>
                 </div>
@@ -1011,7 +1034,10 @@ export default function App() {
                 <div key={id} className={`tab${active === id ? " on" : ""}${m.sandbox ? " sbx" : ""}`} onClick={() => openTab(id)} title={m.label}
                   onMouseDown={(e) => e.button === 1 && e.preventDefault()}
                   onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(id); } }}>
-                  {m.waiting ? <span className="dot waiting" /> : m.dot ? <span className="dot" /> : m.icon && <Icon name={m.icon} size={14} />}
+                  {m.sandbox ? (
+                    // The sandbox icon stays; the state is a dot on its corner.
+                    <span className="sbx-ic"><Icon name="box" size={14} />{m.waiting ? <span className="dot waiting" /> : m.dot && <span className="dot" />}</span>
+                  ) : m.waiting ? <span className="dot waiting" /> : m.dot ? <span className="dot" /> : m.icon && <Icon name={m.icon} size={14} />}
                   <span className="label">{m.label}</span>
                   {m.acc && <span className="ini acc-c" style={accVars(m.acc.color)}>{m.acc.name[0]?.toUpperCase()}</span>}
                   <button className="close" title={t("Close")} onClick={(e) => { e.stopPropagation(); closeTab(id); }}><Icon name="x" size={14} /></button>
@@ -1088,6 +1114,8 @@ export default function App() {
               onEdit={() => openTab(`edit:${activeCtx.id}`)}
               onDelete={() => setDeleting(activeCtx)}
               shellOpen={shellOpen} shellHint={shellHint} onToggleShell={() => toggleShell(activeCtx)}
+              shellCount={shells[activeCtx.id]?.tabs.length ?? 0}
+              repo={activeCtx.sandbox ? null : repo[workingDir(activeCtx)] ?? null} repoDir={workingDir(activeCtx)} onRepoRefresh={loadRepo}
               sandboxCount={sandboxesOf(activeCtx.id).length} onSandboxes={() => openTab(`sandboxes:${activeCtx.id}`)}
               changesCount={sbxFiles[activeCtx.id]?.length ?? 0} changesOpen={!!changesOpen[activeCtx.id]}
               onToggleChanges={() => setChangesOpen((x) => ({ ...x, [activeCtx.id]: !x[activeCtx.id] }))}
@@ -1215,10 +1243,11 @@ export default function App() {
   );
 }
 
-function ChatHeader({ ctx, working, waiting, archiving, limits, line, chatRef, onUsage, onRename, onNewChat, onHistory, onEdit, onDelete, shellOpen, shellHint, onToggleShell, onDetach, onOpenFolder, sandboxCount, onSandboxes, changesCount, changesOpen, onToggleChanges }: {
+function ChatHeader({ ctx, working, waiting, archiving, limits, line, chatRef, onUsage, onRename, onNewChat, onHistory, onEdit, onDelete, shellOpen, shellHint, onToggleShell, shellCount, repo, repoDir, onRepoRefresh, onDetach, onOpenFolder, sandboxCount, onSandboxes, changesCount, changesOpen, onToggleChanges }: {
   ctx: Context; working: boolean; waiting: boolean; archiving: boolean; limits: AccountLimits | null; line: ContextLine | null; chatRef: ChatRef | null; onUsage: () => void;
   onRename: (name: string) => void; onNewChat: () => void; onHistory: () => void; onEdit: () => void; onDelete: () => void;
-  shellOpen: boolean; shellHint: string; onToggleShell: () => void;
+  shellOpen: boolean; shellHint: string; onToggleShell: () => void; shellCount: number;
+  repo: GitState | null; repoDir: string; onRepoRefresh: () => void;
   onDetach: () => void; onOpenFolder: () => void; sandboxCount: number; onSandboxes: () => void;
   changesCount: number; changesOpen: boolean; onToggleChanges: () => void;
 }) {
@@ -1249,10 +1278,14 @@ function ChatHeader({ ctx, working, waiting, archiving, limits, line, chatRef, o
         </button>
       )}
       {!sbx && ctx.folders.map((f, i) => (
-        <button key={f.path} className={`chip${i === ctx.workingIndex ? " wd" : ""}`} onClick={() => api.openFolder(f.path)}
-          title={i === ctx.workingIndex ? t("Working folder: {path} · click to open it", { path: f.path }) : t("Open the folder: {path}", { path: f.path })}>
-          <Icon name="folder" size={13} />{folderName(f.path)}
-        </button>
+        <Fragment key={f.path}>
+          <button className={`chip${i === ctx.workingIndex ? " wd" : ""}`} onClick={() => api.openFolder(f.path)}
+            title={i === ctx.workingIndex ? t("Working folder: {path} · click to open it", { path: f.path }) : t("Open the folder: {path}", { path: f.path })}>
+            <Icon name="folder" size={13} />{folderName(f.path)}
+          </button>
+          {i === ctx.workingIndex && repo?.repo && <GitChip status={repo.repo} dir={repoDir} onRefresh={onRepoRefresh} />}
+          {i === ctx.workingIndex && repo?.untrusted && <GitUntrustedChip path={repo.untrusted} onTrusted={onRepoRefresh} />}
+        </Fragment>
       ))}
       <div className="right">
         {archiving && <span className="why">{t("Saving the previous chat to the history…")}</span>}
@@ -1266,7 +1299,10 @@ function ChatHeader({ ctx, working, waiting, archiving, limits, line, chatRef, o
             <Icon name="changes" />{changesCount > 0 && <span className="badge">{changesCount}</span>}
           </button>
         )}
-        <button className={`btn icon${shellOpen ? " on" : ""}`} title={`${t("Terminal")} (${shellHint})`} aria-pressed={shellOpen} onClick={onToggleShell}><Icon name="terminal" /></button>
+        <button className={`btn icon has-badge${shellOpen ? " on" : ""}`} aria-pressed={shellOpen} onClick={onToggleShell}
+          title={shellCount > 0 ? `${t("Terminal")} (${shellHint}) · ${t("Open terminals: {n}", { n: shellCount })}` : `${t("Terminal")} (${shellHint})`}>
+          <Icon name="terminal" />{shellCount > 0 && <span className="badge shells">{shellCount}</span>}
+        </button>
         {!sbx && (
           <button className="btn pri icon" disabled={working} title={working ? t("Available when Claude is done") : t("New chat")} aria-label={t("New chat")} onClick={onNewChat}><Icon name="plus" /></button>
         )}

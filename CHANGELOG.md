@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-11-27
+
+### Added
+- Pasted texts and images in a chat: <kbd>Ctrl</kbd>+hover over a `[Pasted text #N]` or `[Image #N]` placeholder previews what was pasted, with Copy and Open; <kbd>Ctrl</kbd>+click opens it in the default editor or viewer. Works for sent messages too (also in resumed chats), reading what Claude Code saved.
+- Git chip in the chat header, next to the working folder: the branch and the lines not staged yet (new files included). A click lists the files, with the commits to push or pull and the last commit; a click on a file opens it. Read only. Refreshed when the chat opens, when Claude ends a turn and when the app gets the focus back.
+- When git refuses the working folder because another Windows user owns it ("dubious ownership"), the chat header says so as soon as the chat opens, and offers to mark the folder as safe (before, this was offered only when creating a sandbox).
+- How many terminals are open: a badge on the Terminal button, and a count next to the chat in the sidebar.
+
+### Fixed
+- A sandbox tab kept its sandbox icon only while idle: when Claude worked or waited, the state dot replaced it. The icon now stays, with the dot on its corner.
+
 ## [0.2.0] - 2026-11-26
 
 ### Added

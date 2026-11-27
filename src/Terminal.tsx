@@ -5,7 +5,9 @@ import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { t } from "./i18n";
-import { registerTerminalLinks } from "./terminalLinks";
+import { placeholdersNearBottom, registerTerminalLinks } from "./terminalLinks";
+import { PasteTracker, openPaste, type ChatFiles, type PasteRef } from "./pastes";
+import { PastePeek } from "./PastePeek";
 
 export interface LaunchSpec {
   /** PTY session id (one per running chat). */
@@ -17,6 +19,8 @@ export interface LaunchSpec {
   program?: string[];
   /** API-key account: Rust injects its key from Credential Manager. */
   apiKeyAccount?: string | null;
+  /** The Claude chat it runs, to preview its pasted texts and images. */
+  chat?: ChatFiles | null;
 }
 
 interface Props {
@@ -81,6 +85,15 @@ export function Terminal({ spec, visible, onActivity, onExit, onTitle, fontSize,
   wantsFocus.current = focusOnShow;
   const actions = useRef<TerminalActions | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; canCopy: boolean } | null>(null);
+  const [peek, setPeek] = useState<{ ref: PasteRef; anchor: DOMRect } | null>(null);
+  const tracker = useRef<PasteTracker | null>(null);
+  const peekHovered = useRef(false);
+  const peekTimer = useRef<number | undefined>(undefined);
+  /** Hide the preview soon, unless the mouse reaches it first. */
+  const closePeek = () => {
+    window.clearTimeout(peekTimer.current);
+    peekTimer.current = window.setTimeout(() => { if (!peekHovered.current) setPeek(null); }, 180);
+  };
 
   useEffect(() => {
     const xterm = new XTerm({
@@ -115,8 +128,22 @@ export function Terminal({ spec, visible, onActivity, onExit, onTitle, fontSize,
       }),
     );
     const title = xterm.onTitleChange((s) => cb.current.onTitle?.(s));
-    // Ctrl+hover shows paths and URLs in negative, Ctrl+click opens them.
-    const links = registerTerminalLinks(xterm, spec.cwd, { fg: FG, bg: BG });
+    // Ctrl+hover shows paths and URLs in negative, Ctrl+click opens them. In a
+    // Claude chat, paste placeholders too: hover previews, click opens.
+    const pastes = spec.program ? null : new PasteTracker(spec.chat ?? null, () => placeholdersNearBottom(xterm));
+    tracker.current = pastes;
+    const links = registerTerminalLinks(xterm, spec.cwd, { fg: FG, bg: BG }, pastes ? {
+      peek(ref, anchor) {
+        if (!ref || !anchor) return closePeek();
+        window.clearTimeout(peekTimer.current);
+        setPeek((p) => (p && p.ref.kind === ref.kind && p.ref.id === ref.id && p.anchor.top === anchor.top ? p : { ref, anchor }));
+      },
+      open(ref) {
+        pastes.resolve(ref).then((p) => p && openPaste(p)?.catch(() => {}));
+      },
+    } : undefined);
+    const onEsc = (e: KeyboardEvent) => { if (e.key === "Escape") { peekHovered.current = false; setPeek(null); } };
+    window.addEventListener("keydown", onEsc, true);
 
     // Copy / paste like Windows Terminal: Ctrl+C copies when text is selected
     // (otherwise it still interrupts Claude), Ctrl+V pastes, and so do the
@@ -132,12 +159,12 @@ export function Terminal({ spec, visible, onActivity, onExit, onTitle, fontSize,
       }
       if ((ctrl && key === "v") || (ev.shiftKey && !ev.ctrlKey && key === "insert")) {
         ev.preventDefault(); // no second paste from the browser's own paste event
-        pasteInto(xterm);
+        pasteInto(xterm, pastes);
         return false;
       }
       return true;
     });
-    actions.current = { copy: () => copySelection(xterm), paste: () => pasteInto(xterm), selectAll: () => xterm.selectAll(), hasSelection: () => xterm.hasSelection(), focus: () => xterm.focus() };
+    actions.current = { copy: () => copySelection(xterm), paste: () => pasteInto(xterm, pastes), selectAll: () => xterm.selectAll(), hasSelection: () => xterm.hasSelection(), focus: () => xterm.focus() };
     terminalActions.set(ptyId, actions.current);
 
     (async () => {
@@ -181,6 +208,8 @@ export function Terminal({ spec, visible, onActivity, onExit, onTitle, fontSize,
       resize.dispose();
       title.dispose();
       links.dispose();
+      window.removeEventListener("keydown", onEsc, true);
+      window.clearTimeout(peekTimer.current);
       terminalActions.delete(ptyId);
       osc.forEach((d) => d.dispose());
       unlisten.forEach((u) => u());
@@ -216,6 +245,11 @@ export function Terminal({ spec, visible, onActivity, onExit, onTitle, fontSize,
           e.preventDefault();
           setMenu({ x: e.clientX, y: e.clientY, canCopy: !!actions.current?.hasSelection() });
         }} />
+      {peek && visible && tracker.current && (
+        <PastePeek pref={peek.ref} anchor={peek.anchor} tracker={tracker.current}
+          onEnter={() => { peekHovered.current = true; window.clearTimeout(peekTimer.current); }}
+          onLeave={() => { peekHovered.current = false; closePeek(); }} />
+      )}
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => { setMenu(null); term.current?.focus(); }} items={[
           { label: t("Copy"), icon: "copy", disabled: !menu.canCopy, onClick: () => actions.current?.copy() },
@@ -236,15 +270,23 @@ function copySelection(xterm: XTerm) {
 
 /** Text is pasted as typed text (bracketed when the program asks for it);
  *  an image on the clipboard is saved as a PNG and its path is inserted. */
-async function pasteInto(xterm: XTerm) {
+async function pasteInto(xterm: XTerm, pastes: PasteTracker | null) {
   try {
     const p = await invoke<{ text: string | null; imagePath: string | null }>("clipboard_read");
     // As a real paste, so Claude Code sees an image path being pasted and attaches it.
-    if (p.imagePath) xterm.paste(`"${p.imagePath}" `);
-    else if (p.text) xterm.paste(p.text);
+    if (p.imagePath) {
+      pastes?.keepImage(p.imagePath);
+      xterm.paste(`"${p.imagePath}" `);
+    } else if (p.text) {
+      pastes?.keepText(p.text);
+      xterm.paste(p.text);
+    }
   } catch {
     const text = await navigator.clipboard?.readText().catch(() => "");
-    if (text) xterm.paste(text);
+    if (text) {
+      pastes?.keepText(text);
+      xterm.paste(text);
+    }
   }
   xterm.focus();
 }

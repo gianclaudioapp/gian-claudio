@@ -1,6 +1,8 @@
 mod clipboard;
+mod gitinfo;
 mod history;
 mod links;
+mod pastes;
 mod pty;
 mod sandbox;
 mod shells;
@@ -110,6 +112,11 @@ pub fn run() {
             status::autostart_set,
             clipboard::clipboard_read,
             clipboard::clipboard_write,
+            gitinfo::git_info,
+            pastes::paste_lookup,
+            pastes::paste_image_file,
+            pastes::paste_open_text,
+            pastes::clipboard_write_image,
             usage::usage_sessions,
             quit_app
         ])

@@ -51,6 +51,18 @@ export interface HookStatus {
 }
 export interface SandboxSummary { text: string; at: number; base: string }
 export interface FileChange { path: string; status: "A" | "M" | "D"; added: number | null; removed: number | null }
+/** The git state of a working folder (see gitinfo.rs); the files are the changes not staged yet. */
+export interface RepoStatus {
+  branch: string | null;
+  head: string | null;
+  ahead: number;
+  behind: number;
+  upstream: boolean;
+  files: FileChange[];
+  lastSubject: string | null;
+  lastTime: number | null;
+}
+export interface GitState { repo: RepoStatus | null; untrusted: string | null }
 
 export const api = {
   sandboxDiff: (root: string, base: string, path: string) => invoke<string>("sandbox_diff", { root, base, path }).catch(() => ""),
@@ -110,6 +122,9 @@ export const api = {
 
   contextRemoveFiles: (dirName: string) => invoke("context_remove_files", { dirName }),
   openFolder: (path: string) => invoke("open_folder", { path }),
+  /** `repo` is null when the folder is not a repo git can read; `untrusted` is set when git refuses it (dubious ownership). */
+  repoStatus: (dir: string) => invoke<GitState>("git_info", { dir }).catch((): GitState => ({ repo: null, untrusted: null })),
+  openPath: (target: string) => invoke("link_open", { target }),
   revealFile: (path: string) => invoke("reveal_file", { path }),
   claudeCheck: () => invoke<string | null>("claude_check").catch(() => null),
   /** Latest published Claude Code version, or null when offline. */

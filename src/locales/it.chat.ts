@@ -23,6 +23,41 @@ export const itChat: Record<string, string> = {
   "Available when Claude has finished": "Disponibile quando Claude ha finito",
   "Continue in the current chat": "Riprendi nella chat corrente",
 
+  // PastePeek.tsx
+  "Pasted text #{n}": "Testo incollato #{n}",
+  "Image #{n}": "Immagine #{n}",
+  "The pasted content isn't available anymore.": "Il contenuto incollato non è più disponibile.",
+  "…{n} more lines: Open shows them all": "…altre {n} righe: Apri le mostra tutte",
+  "Copied": "Copiato",
+  "Can't copy": "Non copiabile",
+  "Open": "Apri",
+  "Release": "Rilascia",
+  "to close": "per chiudere",
+  "click opens it in the editor": "clic apre nell'editor",
+  "click opens it in the viewer": "clic apre nel visualizzatore",
+
+  // GitChip.tsx and the terminal counts
+  "no commits": "nessun commit",
+  "{branch} · no unstaged changes": "{branch} · nessuna modifica non in stage",
+  "{branch} · 1 file not staged": "{branch} · 1 file non in stage",
+  "{branch} · {n} files not staged": "{branch} · {n} file non in stage",
+  "detached": "staccato",
+  "detached HEAD": "HEAD staccato",
+  "Git status": "Stato git",
+  "Commits to push": "Commit da pushare",
+  "Commits to pull": "Commit da scaricare",
+  "No unstaged changes.": "Nessuna modifica non in stage.",
+  "Not staged": "Non in stage",
+  "Deleted file": "File eliminato",
+  "Open {file}": "Apri {file}",
+  "Last commit: «{s}» · {when}": "Ultimo commit: «{s}» · {when}",
+  "No commits yet": "Ancora nessun commit",
+  "Git doesn't trust this folder": "Git non considera attendibile questa cartella",
+  "Git: folder not trusted": "Git: cartella non attendibile",
+  "Git refuses to read this repository because it belongs to another Windows user (\"dubious ownership\"). Until it is marked as safe, the branch and the changes can't be shown, and sandboxes can't use git.":
+    "Git si rifiuta di leggere questo repository perché appartiene a un altro utente di Windows (\"dubious ownership\"). Finché non lo segni come sicuro, branch e modifiche non si vedono e le sandbox non possono usare git.",
+  "Open terminals: {n}": "Terminali aperti: {n}",
+
   // Usage.tsx
   "resets at {time}": "si azzera alle {time}",
   "resets {day} {time}": "si azzera {day} {time}",

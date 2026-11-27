@@ -3,6 +3,7 @@
 // Ctrl the terminal behaves as before, so selecting text is unaffected.
 import type { IDecoration, IDisposable, ILink, Terminal } from "@xterm/xterm";
 import { invoke } from "@tauri-apps/api/core";
+import { PLACEHOLDER_RE, refOf, type PasteRef } from "./pastes";
 
 /** Terminal colors: a highlighted link is drawn in negative (text color as background). */
 export interface LinkColors { fg: string; bg: string }
@@ -13,7 +14,15 @@ interface LogicalLine {
   cells: Array<{ x: number; y: number }>;
 }
 
-interface Hit { start: number; len: number; target: string }
+interface Hit { start: number; len: number; target: string; paste?: PasteRef }
+
+/** Paste placeholders ("[Pasted text #3 +30 lines]", "[Image #1]"): Ctrl+hover
+ *  previews them, Ctrl+click opens them. */
+export interface PasteHooks {
+  /** Show the preview next to `anchor` (screen rect of the placeholder), or ask to hide it (null). */
+  peek(ref: PasteRef | null, anchor?: DOMRect): void;
+  open(ref: PasteRef): void;
+}
 
 const URL_RE = /\b(?:https?|file):\/\/[^\s"'<>`│]+/gi;
 /** Start of an absolute path: C:\ or C:/, \\server\, ~\ or ~/. */
@@ -24,7 +33,7 @@ const ABS_STOP = /["'<>|*?`\u2500-\u257F]/;
 const TOKEN_RE = /[^\s"'`()<>[\]{}|\u2500-\u257F]+/g;
 const LOOKS_LIKE_PATH = /[\\/]|\.[A-Za-z0-9]{1,8}(?::\d+){0,2}[.,;:!?]*$/;
 
-export function registerTerminalLinks(xterm: Terminal, cwd: string, colors: LinkColors): IDisposable {
+export function registerTerminalLinks(xterm: Terminal, cwd: string, colors: LinkColors, pastes?: PasteHooks): IDisposable {
   const cache = new Map<string, Promise<Hit[]>>();
   let ctrl = false;
   let hovered: { link: ILink; decorations: IDecoration[] } | null = null;
@@ -35,7 +44,10 @@ export function registerTerminalLinks(xterm: Terminal, cwd: string, colors: Link
     if (link.decorations) link.decorations.pointerCursor = on;
     hovered.decorations.forEach((d) => d.dispose());
     hovered.decorations = on ? invertRange(xterm, link, colors) : [];
+    const ref = hoveredPaste.get(link);
+    if (ref && pastes) pastes.peek(on ? ref : null, on ? rangeRect(xterm, link) : undefined);
   }
+  const hoveredPaste = new WeakMap<ILink, PasteRef>();
 
   const onKey = (e: KeyboardEvent) => {
     const down = e.type === "keydown" ? e.ctrlKey || e.key === "Control" : e.ctrlKey && e.key !== "Control";
@@ -54,7 +66,7 @@ export function registerTerminalLinks(xterm: Terminal, cwd: string, colors: Link
       let hits = cache.get(key);
       if (!hits) {
         if (cache.size > 200) cache.clear();
-        hits = findHits(line.text, cwd);
+        hits = findHits(line.text, cwd, !!pastes);
         cache.set(key, hits);
       }
       hits.then((list) => {
@@ -65,6 +77,7 @@ export function registerTerminalLinks(xterm: Terminal, cwd: string, colors: Link
             decorations: { underline: false, pointerCursor: false },
             activate(event) {
               if (!event.ctrlKey) return;
+              if (h.paste) return pastes?.open(h.paste);
               invoke("link_open", { target: h.target }).catch((err) => console.error("link_open", err));
             },
             hover(event) {
@@ -81,6 +94,7 @@ export function registerTerminalLinks(xterm: Terminal, cwd: string, colors: Link
               hovered = null;
             },
           };
+          if (h.paste) hoveredPaste.set(link, h.paste);
           return link;
         });
         callback(links.length ? links : undefined);
@@ -123,11 +137,18 @@ function logicalLine(xterm: Terminal, row: number): LogicalLine | null {
 }
 
 /** URLs directly; paths only when the file exists (checked by the backend). */
-async function findHits(text: string, cwd: string): Promise<Hit[]> {
+async function findHits(text: string, cwd: string, withPastes: boolean): Promise<Hit[]> {
   const hits: Hit[] = [];
   const taken = (i: number) => hits.some((h) => i >= h.start && i < h.start + h.len);
 
+  if (withPastes) {
+    for (const m of text.matchAll(PLACEHOLDER_RE)) {
+      hits.push({ start: m.index!, len: m[0].length, target: "", paste: refOf(m) });
+    }
+  }
+
   for (const m of text.matchAll(URL_RE)) {
+    if (taken(m.index!)) continue;
     let url = m[0].replace(/[.,;:!?'"]+$/, "");
     if (url.endsWith(")") && !url.includes("(")) url = url.slice(0, -1);
     hits.push({ start: m.index!, len: url.length, target: url });
@@ -184,4 +205,31 @@ function invertRange(xterm: Terminal, link: ILink, colors: LinkColors): IDecorat
     }
   }
   return out;
+}
+
+/** Screen rectangle of a link (its first to last row). */
+function rangeRect(xterm: Terminal, link: ILink): DOMRect | undefined {
+  const screen = xterm.element?.querySelector(".xterm-screen");
+  if (!screen) return undefined;
+  const r = screen.getBoundingClientRect();
+  const cw = r.width / xterm.cols;
+  const ch = r.height / xterm.rows;
+  const top = xterm.buffer.active.viewportY;
+  const { start, end } = link.range;
+  const x0 = start.y === end.y ? start.x : 1;
+  const x1 = start.y === end.y ? end.x : xterm.cols;
+  return new DOMRect(r.left + (x0 - 1) * cw, r.top + (start.y - 1 - top) * ch, (x1 - x0 + 1) * cw, (end.y - start.y + 1) * ch);
+}
+
+/** Paste placeholders in the last lines of the terminal (where the prompt is). */
+export function placeholdersNearBottom(xterm: Terminal, rows = 300): PasteRef[] {
+  const buf = xterm.buffer.active;
+  let text = "";
+  for (let y = Math.max(0, buf.length - rows); y < buf.length; y++) {
+    const line = buf.getLine(y);
+    if (!line) continue;
+    // Keep trailing spaces where the line wraps: they may be inside a placeholder.
+    text += (line.isWrapped ? "" : "\n") + line.translateToString(!buf.getLine(y + 1)?.isWrapped);
+  }
+  return [...text.matchAll(PLACEHOLDER_RE)].map(refOf);
 }
